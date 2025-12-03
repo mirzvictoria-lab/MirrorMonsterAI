@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { Creature } from "@/components/Creature";
-import { analyzeSentiment, getCreatureResponse, CreatureState } from "@/lib/creature-logic";
+import { analyzeSentiment, CreatureState } from "@/lib/creature-logic";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -31,35 +31,55 @@ export default function Home() {
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!inputValue.trim()) return;
+    if (!inputValue.trim() || isThinking) return;
 
     const userText = inputValue;
     setInputValue("");
     
     // Add user message
-    setMessages(prev => [...prev, { id: Date.now().toString(), role: "user", text: userText }]);
+    const userMessage: Message = { id: Date.now().toString(), role: "user", text: userText };
+    setMessages(prev => [...prev, userMessage]);
     setIsThinking(true);
 
-    // Simulate processing delay for dramatic effect
-    setTimeout(() => {
-      const polarity = analyzeSentiment(userText);
-      const newMemory = Math.max(-1, Math.min(1, creatureState.memory + polarity)); // Clamp between -1 and 1
-      
-      setCreatureState({
-        memory: newMemory,
-        lastPolarity: polarity
+    // Calculate new sentiment
+    const polarity = analyzeSentiment(userText);
+    const newMemory = Math.max(-1, Math.min(1, creatureState.memory + polarity));
+    
+    setCreatureState({
+      memory: newMemory,
+      lastPolarity: polarity
+    });
+
+    try {
+      // Call the AI backend
+      const response = await fetch("/api/creature/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userMessage: userText,
+          conversationHistory: messages.slice(-10),
+          memoryScore: newMemory
+        })
       });
 
-      const responseText = getCreatureResponse(newMemory);
+      const data = await response.json();
       
       setMessages(prev => [...prev, { 
         id: (Date.now() + 1).toString(), 
         role: "creature", 
-        text: responseText 
+        text: data.response 
       }]);
       
-      setIsThinking(false);
-    }, 1500);
+    } catch (error) {
+      // Fallback if API fails
+      setMessages(prev => [...prev, { 
+        id: (Date.now() + 1).toString(), 
+        role: "creature", 
+        text: "The mirror flickers... I sense you, but the path between us wavers." 
+      }]);
+    }
+    
+    setIsThinking(false);
   };
 
   return (
@@ -128,6 +148,7 @@ export default function Home() {
                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                  >
                    <div 
+                     data-testid={`message-${msg.role}-${msg.id}`}
                      className={`max-w-[85%] p-4 rounded-2xl text-sm leading-relaxed
                        ${msg.role === "user" 
                          ? "bg-white/10 text-white rounded-tr-sm backdrop-blur-sm border border-white/5" 
@@ -141,7 +162,7 @@ export default function Home() {
                {isThinking && (
                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-start">
                     <div className="text-xs text-muted-foreground animate-pulse pl-2">
-                      Listening...
+                      Reflecting...
                     </div>
                  </motion.div>
                )}
@@ -153,6 +174,7 @@ export default function Home() {
            <div className="p-4 bg-black/20 border-t border-white/5">
              <form onSubmit={handleSendMessage} className="flex gap-2">
                <Input 
+                 data-testid="input-message"
                  value={inputValue}
                  onChange={(e) => setInputValue(e.target.value)}
                  placeholder="Speak to the reflection..."
@@ -160,6 +182,7 @@ export default function Home() {
                  autoFocus
                />
                <Button 
+                 data-testid="button-send"
                  type="submit" 
                  size="icon"
                  className="bg-white/10 hover:bg-white/20 text-white border border-white/10"
