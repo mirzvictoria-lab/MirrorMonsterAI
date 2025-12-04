@@ -7,6 +7,7 @@ import express, { type Express } from "express";
 import runApp from "./app";
 
 export async function serveStatic(app: Express, server: Server) {
+  // Correct path to the built client
   const distPath = path.resolve(import.meta.dirname, "public");
 
   if (!fs.existsSync(distPath)) {
@@ -15,10 +16,12 @@ export async function serveStatic(app: Express, server: Server) {
     );
   }
 
+  // Serve static assets
   app.use(express.static(distPath));
 
-  // Correct wildcard handler for Express v5
-  app.get("/*", (_req, res) => {
+  // Must use app.get("*") instead of app.get("/*")
+  // Express resolves "*" correctly and avoids "headersSent" issues
+  app.get("*", (_req, res) => {
     res.sendFile(path.join(distPath, "index.html"));
   });
 }
